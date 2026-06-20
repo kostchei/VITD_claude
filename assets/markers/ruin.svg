@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <g fill="none" stroke="#1a1714" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">
+    <!-- crenellated wall (battlements) -->
+    <path d="M10 54 L10 30 L17 30 L17 24 L25 24 L25 30 L33 30 L33 24 L41 24 L41 30 L49 30 L49 54 Z"/>
+    <!-- arched doorway / broken interior -->
+    <path d="M26 54 L26 43 Q29.5 39 33 43 L33 54"/>
+  </g>
+</svg>
