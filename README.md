@@ -5,7 +5,10 @@ procedural map generation from *The Vast in the Dark*. The map is rolled with
 dice, rendered in a parchment book style, and persisted between sessions.
 
 See [generating-the-vast.md](generating-the-vast.md) for the full generation
-rules (the dice procedure transcribed from the source book).
+rules (the dice procedure transcribed from the source book),
+[roaming-hazards.md](roaming-hazards.md) for the mobile dangers that wander the
+Local map, and [wastes-weather-encounters.md](wastes-weather-encounters.md) for
+the daily weather / encounter / curiosity tables used while crossing the Wastes.
 
 ## Scales
 
@@ -53,7 +56,9 @@ Uses **Godot 4.7-stable** (mono build runs GDScript fine; no .NET SDK needed).
 ## Controls
 
 - **Right-drag** (or middle-drag) = pan · **wheel** = zoom · **WASD / arrows** = move.
-- **Hover** highlights a tile; **single-click** selects it.
+- **Hover** highlights a tile; **single-click** selects it (Regional), or on the
+  **Local** map steps the party onto an adjacent hex (**1 mile**; 18 miles = a
+  day, which rolls weather + an encounter).
 - **Double-click** a hex to go deeper: Regional → Local → Dungeon.
 - **Backspace** (or **◂ Back**) goes up a scale.
 - In a Dungeon: **Q / E** (or PageUp/PageDown), or the **Levels** panel, move
@@ -73,6 +78,8 @@ scripts/
     hex_tile.gd             # one tile (coord + terrain)
     hex_map.gd              # rectangular (Regional) / hexagonal (Local) maps
     vast_gen.gd             # dice-based terrain generation
+    hazard_set.gd           # roaming hazards (mobile dangers on the Local map)
+    wastes.gd               # daily weather / encounter / curiosity tables + movement & upkeep
     world_save.gd           # JSON save/load of the generated world
     dungeon.gd              # stack of levels
     dungeon_level.gd        # one square-grid level

@@ -10,6 +10,8 @@ signal tile_entered(coord: Vector2i)  # double-click = descend a scale
 var map: HexMap = null
 var hex_size: float = 48.0
 var hazards: HazardSet = null  # roaming-hazards overlay (Local scale only)
+var _has_party := false        # party token (Local scale only)
+var _party := Vector2i.ZERO
 
 # Line-art terrain markers (parchment book style). Loaded at runtime.
 var _tex_ruin: Texture2D = null
@@ -35,12 +37,25 @@ func set_map(m: HexMap, size: float) -> void:
 	_has_hover = false
 	_has_selected = false
 	hazards = null  # cleared until the owner sets the matching overlay
+	_has_party = false  # party token is set per-map by the owner
 	queue_redraw()
 
 
 ## Set (or clear, with null) the roaming-hazards overlay drawn on this map.
 func set_hazards(hs: HazardSet) -> void:
 	hazards = hs
+	queue_redraw()
+
+
+## Place the party token on a hex (Local scale). clear_party() removes it.
+func set_party(coord: Vector2i) -> void:
+	_party = coord
+	_has_party = true
+	queue_redraw()
+
+
+func clear_party() -> void:
+	_has_party = false
 	queue_redraw()
 
 
@@ -113,6 +128,21 @@ func _draw() -> void:
 	if hazards != null:
 		for h in hazards.hazards:
 			_draw_hazard(HexGrid.axial_to_pixel(h.hex, hex_size, flat), h.kind, font)
+
+	# The party token draws last, so it stays visible over terrain and hazards.
+	if _has_party:
+		_draw_party(HexGrid.axial_to_pixel(_party, hex_size, flat))
+
+
+## Draw the party as an ink pawn with a small gold standard, so it reads clearly
+## against the parchment fills and the hazard dice.
+func _draw_party(center: Vector2) -> void:
+	var r := hex_size * 0.30
+	draw_circle(center, r, Color(0.10, 0.22, 0.30, 0.95))             # ink token body
+	draw_arc(center, r, 0.0, TAU, 32, Color(0.95, 0.74, 0.15), 3.0)   # gold ring
+	var staff_top := center + Vector2(0, -r - hex_size * 0.30)
+	draw_line(center + Vector2(0, -r), staff_top, Color(0.95, 0.74, 0.15), 3.0)
+	draw_circle(staff_top, r * 0.30, Color(0.85, 0.24, 0.20))         # red standard
 
 
 ## Draw a hazard as a d6 die: a coloured rounded face showing the pips of the

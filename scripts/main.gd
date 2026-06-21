@@ -30,6 +30,11 @@ var selected_local := Vector2i.ZERO
 var current_dungeon: Dungeon
 var current_level := 0
 
+# --- travel (Local scale): 1 hex = 1 mile; a day's 18 miles triggers a roll ---
+var party_local := Vector2i.ZERO
+var miles_today := 0
+var last_day_text := ""
+
 # --- nodes ---
 var world: Node2D
 var camera: WorldCamera
@@ -40,6 +45,7 @@ var dungeon_view: DungeonView
 var breadcrumb: Label
 var info: Label
 var hint: Label
+var journal: Label
 var back_btn: Button
 var new_btn: Button
 var next_day_btn: Button
@@ -115,6 +121,7 @@ func _show_regional() -> void:
 	dungeon_view.visible = false
 	hex_view.visible = true
 	hex_view.set_map(regional_map, HEX_SIZE)
+	hex_view.clear_party()  # the party token lives on the Local map only
 	if has_regional:
 		hex_view.set_selected(selected_regional)
 	camera.position = regional_map.pixel_center(HEX_SIZE)
@@ -134,6 +141,11 @@ func _enter_local(reg: Vector2i) -> void:
 	hex_view.set_hazards(current_hazards)
 	if has_local:
 		hex_view.set_selected(selected_local)
+	# Party starts at the centre of the local hex; the day's mile count resets.
+	party_local = Vector2i.ZERO
+	miles_today = 0
+	last_day_text = ""
+	hex_view.set_party(party_local)
 	camera.position = m.pixel_center(HEX_SIZE)
 	camera.set_zoom_level(1.0)
 	_refresh_ui()
@@ -147,6 +159,7 @@ func _enter_dungeon(loc: Vector2i) -> void:
 	current_hazards = null
 	current_scale = Scale.DUNGEON
 	hex_view.visible = false
+	hex_view.clear_party()
 	dungeon_view.visible = true
 	dungeon_view.set_level(current_dungeon.levels[current_level], DUNGEON_CELL)
 	camera.position = Vector2(DUNGEON_W * DUNGEON_CELL * 0.5, DUNGEON_H * DUNGEON_CELL * 0.5)
@@ -190,13 +203,20 @@ func _get_local_hazards(reg: Vector2i, m: HexMap) -> HazardSet:
 	return local_hazards[reg]
 
 
-## "Next Day": drift every hazard die one hex, re-dropping on collision/edge.
-func _advance_day() -> void:
-	if current_scale != Scale.LOCAL or current_hazards == null:
+## One day in the wastes — the single daily beat. Triggered by completing 18
+## miles of travel OR by resting in place (the Rest button). It rolls weather +
+## an encounter, then drifts every roaming hazard one hex (re-dropping on
+## collision/edge). Ration upkeep and rest also belong here: Wastes.spend_day
+## already models them, it just needs a real party instead of today's empty one
+## (wired up once we have stats & inventory).
+func _pass_day(rested: bool = false) -> void:
+	if current_scale != Scale.LOCAL:
 		return
-	var m: HexMap = local_maps[selected_regional]
-	current_hazards.advance_day(m, rng)
-	hex_view.set_hazards(current_hazards)
+	_roll_day_tables(rested)
+	if current_hazards != null:
+		current_hazards.advance_day(local_maps[selected_regional], rng)
+		hex_view.set_hazards(current_hazards)
+	miles_today = 0  # a closed day (marched or rested) starts a fresh 18-mile stint
 	WorldSave.save_world(regional_map, local_maps, local_hazards)
 	_refresh_ui()
 
@@ -221,10 +241,54 @@ func _on_hex_clicked(c: Vector2i) -> void:
 		selected_regional = c
 		has_regional = true
 	elif current_scale == Scale.LOCAL:
+		# Clicking an adjacent hex steps the party there (1 mile); other clicks
+		# just select. Double-click still descends a scale (tile_entered).
+		if HexGrid.distance(party_local, c) == 1:
+			_travel_step(c)
+			return
 		selected_local = c
 		has_local = true
 	hex_view.set_selected(c)  # keep the view's highlight in sync with state
 	_refresh_ui()
+
+
+# --- travel ---
+
+## Move the party one hex (= 1 mile). Each completed 18 miles is a day, which
+## rolls weather + an encounter on the current hex's terrain table.
+func _travel_step(dest: Vector2i) -> void:
+	party_local = dest
+	hex_view.set_party(party_local)
+	miles_today += 1
+	if miles_today >= Wastes.BASE_MILES_PER_DAY:
+		_pass_day(false)  # a full day's march closes the day and starts a new stint
+	_refresh_ui()
+
+
+## Roll the day's tables for the hex the party stands on, building the journal
+## line. `rested` distinguishes a day spent resting in place from a full march.
+## Only the Wastes table exists today; other terrains report "no table yet"
+## (parked). The caller (_pass_day) owns hazard drift, the stint reset, and save.
+func _roll_day_tables(rested: bool) -> void:
+	var how := "Rested" if rested else "Marched %d mi" % Wastes.BASE_MILES_PER_DAY
+	var terrain: StringName = local_maps[selected_regional].get_tile(party_local).terrain
+	if terrain != VastGen.WASTES:
+		last_day_text = "%s · a day passes on %s — no encounter table for that terrain yet." % [how, terrain]
+	else:
+		# Empty party for now: weather + encounter roll without ration/exhaustion.
+		var report := Wastes.spend_day([], terrain, 0, rng)
+		var weather: String = Wastes.WEATHER_NAMES[report.weather]
+		if report.encounter == Wastes.Encounter.NOTHING:
+			last_day_text = "%s · Weather: %s · Nothing (roll %d)" % [how, weather, report.encounter_roll]
+		else:
+			var enc: String = Wastes.ENCOUNTER_NAMES[report.encounter]
+			var mood: String = Wastes.MOOD_NAMES[report.mood]
+			var mood_str := "  [%s]" % mood if mood != "" else ""
+			last_day_text = "%s · Weather: %s · %d %s%s (roll %d)" % [how, weather, report.group_size, enc, mood_str, report.encounter_roll]
+		if report.landmarks_obscured:
+			last_day_text += "  · landmarks obscured"
+	# Rations & rest are checked here too — flagged until stats/inventory exist.
+	last_day_text += "   · upkeep: rations/rest TBD"
 
 
 func _on_hex_entered(c: Vector2i) -> void:
@@ -290,10 +354,11 @@ func _build_ui() -> void:
 	new_btn.pressed.connect(_on_new_map_pressed)
 	controls.add_child(new_btn)
 
-	# Roaming hazards: advance the local map one day (Local scale only).
+	# Rest: pass a day in place (Local scale only) — same daily beat as travel:
+	# rolls weather + encounter and drifts the roaming hazards one hex.
 	next_day_btn = Button.new()
-	next_day_btn.text = "Next Day ▸"
-	next_day_btn.pressed.connect(_advance_day)
+	next_day_btn.text = "Rest a day ▸"
+	next_day_btn.pressed.connect(_pass_day.bind(true))
 	controls.add_child(next_day_btn)
 
 	new_dialog = ConfirmationDialog.new()
@@ -307,6 +372,8 @@ func _build_ui() -> void:
 	breadcrumb = _make_label(layer, Vector2(16, 52), 20)
 	info = _make_label(layer, Vector2(16, 86), 14)
 	hint = _make_label(layer, Vector2(16, 108), 14)
+	journal = _make_label(layer, Vector2(16, 130), 14)
+	journal.add_theme_color_override("font_color", Color(0.95, 0.74, 0.15))
 
 	level_panel = VBoxContainer.new()
 	level_panel.position = Vector2(1140, 100)
@@ -352,6 +419,7 @@ func _on_scale_button(s: Scale) -> void:
 func _refresh_ui() -> void:
 	breadcrumb.text = _breadcrumb_text()
 	hint.text = _hint_text()
+	journal.text = last_day_text if current_scale == Scale.LOCAL else ""
 	back_btn.disabled = current_scale == Scale.REGIONAL
 	next_day_btn.visible = current_scale == Scale.LOCAL
 
@@ -387,8 +455,7 @@ func _breadcrumb_text() -> String:
 	if current_scale == Scale.LOCAL:
 		if current_hazards != null:
 			s += "   ›   Day %d · %d hazards" % [current_hazards.day, current_hazards.hazards.size()]
-		if has_local:
-			s += "   ›   mile %d,%d (selected)" % [selected_local.x, selected_local.y]
+		s += "   ›   %d/%d mi today" % [miles_today, Wastes.BASE_MILES_PER_DAY]
 		return s
 	s += "   ›   Dungeon %d,%d   ›   Level %d/%d" % [selected_local.x, selected_local.y, current_level + 1, DUNGEON_LEVELS]
 	return s
@@ -399,7 +466,7 @@ func _hint_text() -> String:
 		Scale.REGIONAL:
 			return "Double-click a hex to enter Local.   Right-drag = pan, wheel = zoom, WASD = move."
 		Scale.LOCAL:
-			return "Each sub-hex = 1 mile.   Dice = roaming hazards; Next Day drifts them one hex.   Double-click a hex to descend.   Backspace = up."
+			return "Click an adjacent hex to travel (1 mile). A full day — 18 miles marched, or Rest in place — rolls weather + an encounter, drifts the hazards, and starts a fresh 18-mile stint.   Double-click to descend.   Backspace = up."
 		Scale.DUNGEON:
 			return "Q/E (or PageUp/Down) change level.   Backspace = surface.   Rooms come with procgen."
 	return ""
