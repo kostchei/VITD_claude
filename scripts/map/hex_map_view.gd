@@ -9,6 +9,7 @@ signal tile_entered(coord: Vector2i)  # double-click = descend a scale
 
 var map: HexMap = null
 var hex_size: float = 48.0
+var hazards: HazardSet = null  # roaming-hazards overlay (Local scale only)
 
 # Line-art terrain markers (parchment book style). Loaded at runtime.
 var _tex_ruin: Texture2D = null
@@ -33,6 +34,13 @@ func set_map(m: HexMap, size: float) -> void:
 	hex_size = size
 	_has_hover = false
 	_has_selected = false
+	hazards = null  # cleared until the owner sets the matching overlay
+	queue_redraw()
+
+
+## Set (or clear, with null) the roaming-hazards overlay drawn on this map.
+func set_hazards(hs: HazardSet) -> void:
+	hazards = hs
 	queue_redraw()
 
 
@@ -100,6 +108,61 @@ func _draw() -> void:
 		var label := "%d,%d" % [coord.x, coord.y]
 		draw_string(font, center + Vector2(-hex_size * 0.5, hex_size * 0.62), label,
 			HORIZONTAL_ALIGNMENT_CENTER, hex_size, 11, Color(0.35, 0.30, 0.22, 0.6))
+
+	# Roaming-hazard dice draw on top of the terrain so they never hide the map.
+	if hazards != null:
+		for h in hazards.hazards:
+			_draw_hazard(HexGrid.axial_to_pixel(h.hex, hex_size, flat), h.kind, font)
+
+
+## Draw a hazard as a d6 die: a coloured rounded face showing the pips of the
+## rolled value (kind + 1) plus the hazard's name beneath it.
+func _draw_hazard(center: Vector2, kind: int, font: Font) -> void:
+	var side := hex_size * 0.72
+	var rect := Rect2(center - Vector2(side, side) * 0.5, Vector2(side, side))
+	draw_rect(rect, Color(0.13, 0.12, 0.15, 0.92), true)            # die body
+	draw_rect(rect, _hazard_color(kind), false, 3.0)               # coloured rim
+	_draw_die_pips(center, side, kind + 1)
+	var nm: String = HazardSet.KIND_NAMES[kind]
+	var tw := font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	draw_string(font, center + Vector2(-tw * 0.5, side * 0.5 + 16), nm,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, _hazard_color(kind))
+
+
+## Pip layout for a d6 face (1-6), drawn as small light dots inside the die.
+func _draw_die_pips(center: Vector2, side: float, value: int) -> void:
+	var u := side * 0.26  # pip offset from centre
+	var rad := side * 0.085
+	var col := Color(0.93, 0.93, 0.88)
+	var L := center + Vector2(-u, 0)
+	var R := center + Vector2(u, 0)
+	var slots: Array[Vector2] = []
+	match value:
+		1: slots = [center]
+		2: slots = [center + Vector2(-u, -u), center + Vector2(u, u)]
+		3: slots = [center + Vector2(-u, -u), center, center + Vector2(u, u)]
+		4: slots = [center + Vector2(-u, -u), center + Vector2(u, -u),
+				center + Vector2(-u, u), center + Vector2(u, u)]
+		5: slots = [center + Vector2(-u, -u), center + Vector2(u, -u), center,
+				center + Vector2(-u, u), center + Vector2(u, u)]
+		6: slots = [center + Vector2(-u, -u), L, center + Vector2(-u, u),
+				center + Vector2(u, -u), R, center + Vector2(u, u)]
+		_: assert(false, "_draw_die_pips: value %d out of range" % value)
+	for p in slots:
+		draw_circle(p, rad, col)
+
+
+## Distinct accent per hazard kind (rim + label colour).
+func _hazard_color(kind: int) -> Color:
+	match kind:
+		HazardSet.Kind.WARBAND: return Color(0.85, 0.24, 0.20)        # blood red
+		HazardSet.Kind.MAELSTROM: return Color(0.40, 0.66, 0.86)      # storm blue
+		HazardSet.Kind.CRAWLHERD: return Color(0.55, 0.74, 0.30)      # sickly green
+		HazardSet.Kind.COLLAPSE: return Color(0.70, 0.55, 0.35)       # rubble brown
+		HazardSet.Kind.VOID_LIGHTNING: return Color(0.66, 0.42, 0.90) # violet
+		HazardSet.Kind.SINGING_SAND: return Color(0.90, 0.78, 0.38)   # sand gold
+	assert(false, "_hazard_color: unknown kind %d" % kind)
+	return Color.MAGENTA
 
 
 ## Draw the line-art terrain glyph (ruin / settlement) centred in the hex.

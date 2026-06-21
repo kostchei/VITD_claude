@@ -18,8 +18,10 @@ enum Scale { REGIONAL, LOCAL, DUNGEON }
 var rng := RandomNumberGenerator.new()
 var current_scale: Scale = Scale.REGIONAL
 var regional_map: HexMap
-var local_maps := {}   # Vector2i -> HexMap
-var dungeons := {}     # String -> Dungeon
+var local_maps := {}     # Vector2i -> HexMap
+var local_hazards := {}  # Vector2i -> HazardSet (roaming overlay per local map)
+var dungeons := {}       # String -> Dungeon
+var current_hazards: HazardSet = null  # hazards of the local map on screen
 
 var has_regional := false
 var selected_regional := Vector2i.ZERO
@@ -40,6 +42,7 @@ var info: Label
 var hint: Label
 var back_btn: Button
 var new_btn: Button
+var next_day_btn: Button
 var new_dialog: ConfirmationDialog
 var scale_btns := {}   # Scale -> Button
 var level_panel: VBoxContainer
@@ -80,16 +83,18 @@ func _new_world() -> void:
 	regional_map = HexMap.make_rectangular(REGIONAL_COLS, REGIONAL_ROWS)
 	VastGen.generate_regional(regional_map, rng)
 	local_maps.clear()
+	local_hazards.clear()
 	dungeons.clear()
 	has_regional = false
 	has_local = false
-	WorldSave.save_world(regional_map, local_maps)
+	WorldSave.save_world(regional_map, local_maps, local_hazards)
 
 
 func _load_world() -> void:
 	var w := WorldSave.load_world()
 	regional_map = w["regional"]
 	local_maps = w["locals"]
+	local_hazards = w["hazards"]
 	dungeons.clear()  # dungeons are placeholder; regenerated lazily
 
 
@@ -106,6 +111,7 @@ func _on_new_map_confirmed() -> void:
 
 func _show_regional() -> void:
 	current_scale = Scale.REGIONAL
+	current_hazards = null
 	dungeon_view.visible = false
 	hex_view.visible = true
 	hex_view.set_map(regional_map, HEX_SIZE)
@@ -120,10 +126,12 @@ func _enter_local(reg: Vector2i) -> void:
 	selected_regional = reg
 	has_regional = true
 	var m: HexMap = _get_local_map(reg)
+	current_hazards = _get_local_hazards(reg, m)
 	current_scale = Scale.LOCAL
 	dungeon_view.visible = false
 	hex_view.visible = true
 	hex_view.set_map(m, HEX_SIZE)
+	hex_view.set_hazards(current_hazards)
 	if has_local:
 		hex_view.set_selected(selected_local)
 	camera.position = m.pixel_center(HEX_SIZE)
@@ -136,6 +144,7 @@ func _enter_dungeon(loc: Vector2i) -> void:
 	has_local = true
 	current_dungeon = _get_dungeon(selected_regional, loc)
 	current_level = 0
+	current_hazards = null
 	current_scale = Scale.DUNGEON
 	hex_view.visible = false
 	dungeon_view.visible = true
@@ -168,8 +177,28 @@ func _get_local_map(reg: Vector2i) -> HexMap:
 		var parent: StringName = regional_map.get_tile(reg).terrain
 		VastGen.generate_local(m, parent, rng)
 		local_maps[reg] = m
-		WorldSave.save_world(regional_map, local_maps)  # persist newly explored map
+		WorldSave.save_world(regional_map, local_maps, local_hazards)  # persist newly explored map
 	return local_maps[reg]
+
+
+## Roaming hazards for a local map: seeded once on first visit, then persisted
+## (so re-entering shows the same dice on the same day).
+func _get_local_hazards(reg: Vector2i, m: HexMap) -> HazardSet:
+	if not local_hazards.has(reg):
+		local_hazards[reg] = HazardSet.generate(m, rng)
+		WorldSave.save_world(regional_map, local_maps, local_hazards)
+	return local_hazards[reg]
+
+
+## "Next Day": drift every hazard die one hex, re-dropping on collision/edge.
+func _advance_day() -> void:
+	if current_scale != Scale.LOCAL or current_hazards == null:
+		return
+	var m: HexMap = local_maps[selected_regional]
+	current_hazards.advance_day(m, rng)
+	hex_view.set_hazards(current_hazards)
+	WorldSave.save_world(regional_map, local_maps, local_hazards)
+	_refresh_ui()
 
 
 func _get_dungeon(reg: Vector2i, loc: Vector2i) -> Dungeon:
@@ -183,6 +212,8 @@ func _get_dungeon(reg: Vector2i, loc: Vector2i) -> Dungeon:
 
 func _on_hex_hovered(c: Vector2i) -> void:
 	info.text = "%s  hex %d, %d" % [_scale_label(current_scale), c.x, c.y]
+	if current_scale == Scale.LOCAL and current_hazards != null and current_hazards.has_hazard_at(c):
+		info.text += "   ⚠ %s" % current_hazards.name_of(current_hazards.at(c).kind)
 
 
 func _on_hex_clicked(c: Vector2i) -> void:
@@ -259,6 +290,12 @@ func _build_ui() -> void:
 	new_btn.pressed.connect(_on_new_map_pressed)
 	controls.add_child(new_btn)
 
+	# Roaming hazards: advance the local map one day (Local scale only).
+	next_day_btn = Button.new()
+	next_day_btn.text = "Next Day ▸"
+	next_day_btn.pressed.connect(_advance_day)
+	controls.add_child(next_day_btn)
+
 	new_dialog = ConfirmationDialog.new()
 	new_dialog.title = "New Regional Map"
 	new_dialog.dialog_text = "Roll a new regional map?\nThe current world and all explored local maps will be replaced."
@@ -316,6 +353,7 @@ func _refresh_ui() -> void:
 	breadcrumb.text = _breadcrumb_text()
 	hint.text = _hint_text()
 	back_btn.disabled = current_scale == Scale.REGIONAL
+	next_day_btn.visible = current_scale == Scale.LOCAL
 
 	scale_btns[Scale.REGIONAL].button_pressed = current_scale == Scale.REGIONAL
 	scale_btns[Scale.LOCAL].button_pressed = current_scale == Scale.LOCAL
@@ -347,6 +385,8 @@ func _breadcrumb_text() -> String:
 		return s
 	s += "   ›   Local %d,%d (%d mi across)" % [selected_regional.x, selected_regional.y, LOCAL_ACROSS]
 	if current_scale == Scale.LOCAL:
+		if current_hazards != null:
+			s += "   ›   Day %d · %d hazards" % [current_hazards.day, current_hazards.hazards.size()]
 		if has_local:
 			s += "   ›   mile %d,%d (selected)" % [selected_local.x, selected_local.y]
 		return s
@@ -359,7 +399,7 @@ func _hint_text() -> String:
 		Scale.REGIONAL:
 			return "Double-click a hex to enter Local.   Right-drag = pan, wheel = zoom, WASD = move."
 		Scale.LOCAL:
-			return "Each sub-hex = 1 mile.   Double-click a hex to descend into a Dungeon.   Backspace = up."
+			return "Each sub-hex = 1 mile.   Dice = roaming hazards; Next Day drifts them one hex.   Double-click a hex to descend.   Backspace = up."
 		Scale.DUNGEON:
 			return "Q/E (or PageUp/Down) change level.   Backspace = surface.   Rooms come with procgen."
 	return ""

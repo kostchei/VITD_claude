@@ -1,8 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <g fill="none" stroke="#1a1714" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">
-    <!-- crenellated wall (battlements) -->
-    <path d="M10 54 L10 30 L17 30 L17 24 L25 24 L25 30 L33 30 L33 24 L41 24 L41 30 L49 30 L49 54 Z"/>
-    <!-- arched doorway / broken interior -->
-    <path d="M26 54 L26 43 Q29.5 39 33 43 L33 54"/>
+  <g fill="none" stroke="#1a1714" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round">
+    <!-- ruined city skyline: towers of varying height, broken tops, a gap -->
+    <path d="M8 52
+      L8 32 L15 32 L15 23 L22 23 L22 35 L28 35 L28 16
+      L32 11 L36 16 L36 31 L42 31 L42 24 L49 24 L49 17 L55 23 L55 52 Z"/>
+    <!-- windows / broken openings -->
+    <g stroke-width="2.2">
+      <rect x="11" y="38" width="4" height="5"/>
+      <rect x="30" y="22" width="4" height="5"/>
+      <rect x="44" y="34" width="4" height="5"/>
+    </g>
   </g>
 </svg>
