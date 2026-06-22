@@ -1,30 +1,38 @@
 class_name WorldSave
-## Persists the generated world (regional map + explored local maps) to a JSON
-## file under user://. Maps are rebuilt generically from the saved tiles, so this
-## does not depend on grid dimensions. No silent fallbacks: any I/O or format
-## problem raises (assert) per project conventions.
+## Persists the world to a JSON file under user://. Stores the regional map plus
+## a world seed; the continuous 1-mile Local field is regenerated deterministically
+## from (world_seed, regional terrain), so per-tile local data need not be saved.
+## No silent fallbacks: any I/O, format, or version problem raises (assert).
 
 const PATH := "user://vast_world.json"
-const VERSION := 2  # v2 adds the roaming-hazards overlay per local map
+const VERSION := 3  # v3: continuous Local field is seed-derived (drops per-map locals/hazards)
 
 
 static func has_save() -> bool:
 	return FileAccess.file_exists(PATH)
 
 
-## `hazards` maps a regional coord -> HazardSet for each explored local map.
-static func save_world(regional: HexMap, locals: Dictionary, hazards: Dictionary = {}) -> void:
-	var locals_out := {}
-	for reg_coord in locals:
-		locals_out[_key(reg_coord)] = _map_to_dict(locals[reg_coord])
-	var hazards_out := {}
-	for reg_coord in hazards:
-		hazards_out[_key(reg_coord)] = _hazards_to_dict(hazards[reg_coord])
+## The version of the on-disk save, or -1 if there is none / it is unreadable.
+## Lets the caller decide to roll a fresh world rather than load an old format.
+static func save_version() -> int:
+	if not has_save():
+		return -1
+	var f := FileAccess.open(PATH, FileAccess.READ)
+	if f == null:
+		return -1
+	var text := f.get_as_text()
+	f.close()
+	var data: Variant = JSON.parse_string(text)
+	if not (data is Dictionary):
+		return -1
+	return int(data.get("version", -1))
+
+
+static func save_world(regional: HexMap, world_seed: int) -> void:
 	var data := {
 		"version": VERSION,
+		"world_seed": world_seed,
 		"regional": _map_to_dict(regional),
-		"locals": locals_out,
-		"hazards": hazards_out,
 	}
 	var f := FileAccess.open(PATH, FileAccess.WRITE)
 	assert(f != null, "WorldSave.save_world: cannot write %s (err %d)" % [PATH, FileAccess.get_open_error()])
@@ -32,8 +40,7 @@ static func save_world(regional: HexMap, locals: Dictionary, hazards: Dictionary
 	f.close()
 
 
-## Returns { "regional": HexMap, "locals": {Vector2i->HexMap},
-##           "hazards": {Vector2i->HazardSet} }.
+## Returns { "regional": HexMap, "world_seed": int }.
 static func load_world() -> Dictionary:
 	assert(has_save(), "WorldSave.load_world: no save at %s" % PATH)
 	var f := FileAccess.open(PATH, FileAccess.READ)
@@ -44,21 +51,11 @@ static func load_world() -> Dictionary:
 	var data: Variant = JSON.parse_string(text)
 	assert(data is Dictionary, "WorldSave.load_world: malformed JSON in %s" % PATH)
 	var ver := int(data.get("version", -1))
-	assert(ver >= 1 and ver <= VERSION,
-		"WorldSave.load_world: unsupported version %s (expected 1..%d)" % [str(data.get("version")), VERSION])
-
-	var locals := {}
-	for key in data["locals"]:
-		locals[_parse_key(key)] = _dict_to_map(data["locals"][key])
-	# v1 saves have no hazards block; those local maps re-seed hazards on entry.
-	var hazards := {}
-	if data.has("hazards"):
-		for key in data["hazards"]:
-			hazards[_parse_key(key)] = _dict_to_hazards(data["hazards"][key])
+	assert(ver == VERSION, "WorldSave.load_world: unsupported version %s (need %d)" % [str(data.get("version")), VERSION])
+	assert(data.has("world_seed"), "WorldSave.load_world: missing world_seed")
 	return {
 		"regional": _dict_to_map(data["regional"]),
-		"locals": locals,
-		"hazards": hazards,
+		"world_seed": int(data["world_seed"]),
 	}
 
 
@@ -92,24 +89,6 @@ static func _dict_to_map(d: Dictionary) -> HexMap:
 		m.tiles[coord] = t
 	assert(not m.tiles.is_empty(), "WorldSave._dict_to_map: rebuilt an empty map")
 	return m
-
-
-static func _hazards_to_dict(hs: HazardSet) -> Dictionary:
-	var list := []
-	for h in hs.hazards:
-		list.append({"hex": _key(h.hex), "kind": int(h.kind)})
-	return {"day": int(hs.day), "hazards": list}
-
-
-static func _dict_to_hazards(d: Dictionary) -> HazardSet:
-	var hs := HazardSet.new()
-	hs.day = int(d["day"])
-	for entry in d["hazards"]:
-		var kind := int(entry["kind"])
-		assert(kind >= 0 and kind < HazardSet.Kind.size(),
-			"WorldSave._dict_to_hazards: bad kind %d" % kind)
-		hs.hazards.append(HazardSet.Hazard.new(_parse_key(entry["hex"]), kind))
-	return hs
 
 
 static func _key(c: Vector2i) -> String:

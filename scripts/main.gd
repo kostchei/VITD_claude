@@ -16,12 +16,20 @@ enum Scale { REGIONAL, LOCAL, DUNGEON }
 
 # --- world state ---
 var rng := RandomNumberGenerator.new()
+var world_seed := 0
 var current_scale: Scale = Scale.REGIONAL
 var regional_map: HexMap
-var local_maps := {}     # Vector2i -> HexMap
-var local_hazards := {}  # Vector2i -> HazardSet (roaming overlay per local map)
+
+# Continuous 1-mile Local field: one HexMap grown chunk-by-chunk as the party
+# explores. Each regional hex is generated once (deterministically) into it.
+var local_field: HexMap
+var generated_regions := {}   # Vector2i -> true (regions stocked into local_field)
+var region_submaps := {}      # Vector2i -> HexMap (a region's fine coords, for hazards)
+var region_hazards := {}      # Vector2i -> HazardSet (roaming that region)
+var current_region := Vector2i.ZERO
+var current_hazards: HazardSet = null  # hazards of the region the party is in
+
 var dungeons := {}       # String -> Dungeon
-var current_hazards: HazardSet = null  # hazards of the local map on screen
 
 var has_regional := false
 var selected_regional := Vector2i.ZERO
@@ -30,8 +38,8 @@ var selected_local := Vector2i.ZERO
 var current_dungeon: Dungeon
 var current_level := 0
 
-# --- travel (Local scale): 1 hex = 1 mile; a day's 18 miles triggers a roll ---
-var party_local := Vector2i.ZERO
+# --- travel (Local scale): 1 fine hex = 1 mile; a day's 18 miles triggers a roll ---
+var party_local := Vector2i.ZERO  # party position in continuous fine coords
 var miles_today := 0
 var last_day_text := ""
 
@@ -58,7 +66,9 @@ var level_btns: Array[Button] = []
 
 func _ready() -> void:
 	rng.randomize()
-	if WorldSave.has_save():
+	# Load only a save in the current format; an older one is migrated by rolling
+	# a fresh world (explicit, not a silent fallback).
+	if WorldSave.save_version() == WorldSave.VERSION:
 		_load_world()
 	else:
 		_new_world()
@@ -89,20 +99,30 @@ func _ready() -> void:
 func _new_world() -> void:
 	regional_map = HexMap.make_rectangular(REGIONAL_COLS, REGIONAL_ROWS)
 	VastGen.generate_regional(regional_map, rng)
-	local_maps.clear()
-	local_hazards.clear()
+	world_seed = int(rng.randi())
+	_reset_local_field()
 	dungeons.clear()
 	has_regional = false
 	has_local = false
-	WorldSave.save_world(regional_map, local_maps, local_hazards)
+	WorldSave.save_world(regional_map, world_seed)
 
 
 func _load_world() -> void:
 	var w := WorldSave.load_world()
 	regional_map = w["regional"]
-	local_maps = w["locals"]
-	local_hazards = w["hazards"]
+	world_seed = w["world_seed"]
+	_reset_local_field()
 	dungeons.clear()  # dungeons are placeholder; regenerated lazily
+
+
+## Fresh, empty continuous Local field (filled lazily per region on exploration).
+func _reset_local_field() -> void:
+	local_field = HexMap.new()
+	local_field.scale = HexMap.Scale.LOCAL
+	local_field.orientation = HexMap.Orientation.POINTY
+	generated_regions.clear()
+	region_submaps.clear()
+	region_hazards.clear()
 
 
 func _on_new_map_pressed() -> void:
@@ -131,21 +151,34 @@ func _show_regional() -> void:
 
 
 func _enter_local(reg: Vector2i) -> void:
+	# Pillars regions are filled solid (impassable) — there's nowhere to stand.
+	if regional_map.has(reg) and regional_map.get_tile(reg).terrain == VastGen.PILLARS:
+		last_day_text = ""
+		info.text = "Pillars hex %d,%d is impassable — cyclopean columns, not explorable." % [reg.x, reg.y]
+		return
 	selected_regional = reg
 	has_regional = true
-	var m: HexMap = _get_local_map(reg)
-	current_hazards = _get_local_hazards(reg, m)
+	# Party starts at the centre of this region; the day's mile count resets.
+	party_local = VastGen.region_center_fine(reg)
+	miles_today = 0
+	last_day_text = ""
+	_set_current_region(reg)  # generate the region (+ neighbours) and its hazards
+	_show_local_view()
+
+
+## Re-show the Local scale at the party's existing position (e.g. surfacing from
+## a dungeon) without resetting the party or the day's mile count.
+func _resume_local() -> void:
+	_set_current_region(VastGen.coarse_of(party_local))
+	_show_local_view()
+
+
+func _show_local_view() -> void:
 	current_scale = Scale.LOCAL
 	dungeon_view.visible = false
 	hex_view.visible = true
-	hex_view.set_map(m, HEX_SIZE)
+	hex_view.set_map(local_field, HEX_SIZE)
 	hex_view.set_hazards(current_hazards)
-	if has_local:
-		hex_view.set_selected(selected_local)
-	# Party starts at the centre of the local hex; the day's mile count resets.
-	party_local = Vector2i.ZERO
-	miles_today = 0
-	last_day_text = ""
 	hex_view.set_party(party_local)
 	camera.set_zoom_level(1.0)
 	_recentre_on_party()  # frame on the party, not the bare map centre
@@ -154,6 +187,7 @@ func _enter_local(reg: Vector2i) -> void:
 
 func _enter_dungeon(loc: Vector2i) -> void:
 	selected_local = loc
+	selected_regional = VastGen.coarse_of(loc)  # the region this fine hex sits in
 	has_local = true
 	current_dungeon = _get_dungeon(selected_regional, loc)
 	current_level = 0
@@ -173,7 +207,7 @@ func _go_back() -> void:
 		Scale.LOCAL:
 			_show_regional()
 		Scale.DUNGEON:
-			_enter_local(selected_regional)
+			_resume_local()  # surface to where the party was, not a fresh entry
 
 
 func _set_level(i: int) -> void:
@@ -182,31 +216,51 @@ func _set_level(i: int) -> void:
 	_refresh_ui()
 
 
-# --- caches (lazy generation; procgen plugs in here later) ---
+# --- continuous Local field (lazy per-region generation) ---
 
-func _get_local_map(reg: Vector2i) -> HexMap:
-	if not local_maps.has(reg):
-		var m := HexMap.make_local()
-		# Local terrain is keyed by the parent regional hex's type.
-		var parent: StringName = regional_map.get_tile(reg).terrain
-		VastGen.generate_local(m, parent, rng)
-		local_maps[reg] = m
-		WorldSave.save_world(regional_map, local_maps, local_hazards)  # persist newly explored map
-	return local_maps[reg]
+## Make `reg` the party's current region: generate it and its neighbours into the
+## continuous field (so rim hexes the party can step onto exist), seed its
+## hazards, and surface them. Off-world / neighbours that don't exist are skipped.
+func _set_current_region(reg: Vector2i) -> void:
+	current_region = reg
+	selected_regional = reg
+	_ensure_region(reg)
+	for dir in HexGrid.DIRECTIONS:
+		_ensure_region(reg + dir)
+	current_hazards = _ensure_region_hazards(reg)
 
 
-## Roaming hazards for a local map: seeded once on first visit, then persisted
-## (so re-entering shows the same dice on the same day).
-func _get_local_hazards(reg: Vector2i, m: HexMap) -> HazardSet:
-	if not local_hazards.has(reg):
-		local_hazards[reg] = HazardSet.generate(m, rng)
-		WorldSave.save_world(regional_map, local_maps, local_hazards)
-	return local_hazards[reg]
+## Stock a region into the field once. Builds its fine-coord sub-map (used for
+## hazard placement/drift) the first time. No-op off the world or if already done.
+func _ensure_region(reg: Vector2i) -> void:
+	if generated_regions.has(reg) or not regional_map.has(reg):
+		return
+	VastGen.generate_region(local_field, regional_map, reg, world_seed)
+	generated_regions[reg] = true
+	var sub := HexMap.new()
+	sub.scale = HexMap.Scale.LOCAL
+	sub.orientation = HexMap.Orientation.POINTY
+	for c in VastGen.region_fine_coords(reg):
+		sub.tiles[c] = local_field.get_tile(c)
+	region_submaps[reg] = sub
+
+
+## A region's roaming hazards, seeded once (deterministically). Pillars regions
+## (filled solid) carry no hazards.
+func _ensure_region_hazards(reg: Vector2i) -> HazardSet:
+	if region_hazards.has(reg):
+		return region_hazards[reg]
+	if not regional_map.has(reg) or regional_map.get_tile(reg).terrain == VastGen.PILLARS:
+		return null
+	var hrng := RandomNumberGenerator.new()
+	hrng.seed = VastGen.region_seed(world_seed, reg) ^ 0x9E3779B9
+	region_hazards[reg] = HazardSet.generate(region_submaps[reg], hrng)
+	return region_hazards[reg]
 
 
 ## One day in the wastes — the single daily beat. Triggered by completing 18
 ## miles of travel OR by resting in place (the Rest button). It rolls weather +
-## an encounter, then drifts every roaming hazard one hex (re-dropping on
+## an encounter, then drifts the current region's hazards one hex (re-dropping on
 ## collision/edge). Ration upkeep and rest also belong here: Wastes.spend_day
 ## already models them, it just needs a real party instead of today's empty one
 ## (wired up once we have stats & inventory).
@@ -215,10 +269,9 @@ func _pass_day(rested: bool = false) -> void:
 		return
 	_roll_day_tables(rested)
 	if current_hazards != null:
-		current_hazards.advance_day(local_maps[selected_regional], rng)
+		current_hazards.advance_day(region_submaps[current_region], rng)
 		hex_view.set_hazards(current_hazards)
 	miles_today = 0  # a closed day (marched or rested) starts a fresh 18-mile stint
-	WorldSave.save_world(regional_map, local_maps, local_hazards)
 	_refresh_ui()
 
 
@@ -242,13 +295,14 @@ func _on_hex_clicked(c: Vector2i) -> void:
 		selected_regional = c
 		has_regional = true
 	elif current_scale == Scale.LOCAL:
-		# Clicking an adjacent hex steps the party there (1 mile); other clicks
-		# just select. Double-click still descends a scale (tile_entered).
-		if HexGrid.distance(party_local, c) == 1:
+		# Clicking an adjacent hex steps the party there (1 mile). Pillars hexes
+		# are impassable. Double-click still descends a scale (tile_entered).
+		if HexGrid.distance(party_local, c) == 1 and local_field.has(c):
+			if local_field.get_tile(c).terrain == VastGen.PILLARS:
+				info.text = "Impassable — cyclopean pillars block the way."
+				return
 			_travel_step(c)
-			return
-		selected_local = c
-		has_local = true
+		return
 	hex_view.set_selected(c)  # keep the view's highlight in sync with state
 	_refresh_ui()
 
@@ -258,10 +312,9 @@ func _on_hex_clicked(c: Vector2i) -> void:
 ## Snap the camera to the party's hex. Free panning (drag / WASD) stays as-is;
 ## this just gets you back when you've wandered the view off the party.
 func _recentre_on_party() -> void:
-	if current_scale != Scale.LOCAL or not local_maps.has(selected_regional):
+	if current_scale != Scale.LOCAL:
 		return
-	var m: HexMap = local_maps[selected_regional]
-	var flat := m.orientation == HexMap.Orientation.FLAT
+	var flat := local_field.orientation == HexMap.Orientation.FLAT
 	camera.position = HexGrid.axial_to_pixel(party_local, HEX_SIZE, flat)
 
 
@@ -271,6 +324,12 @@ func _travel_step(dest: Vector2i) -> void:
 	party_local = dest
 	hex_view.set_party(party_local)
 	miles_today += 1
+	# Crossing into a new regional hex swaps the active region (and its hazards),
+	# generating it + its neighbours so the next steps have ground to stand on.
+	var reg := VastGen.coarse_of(dest)
+	if reg != current_region:
+		_set_current_region(reg)
+		hex_view.set_hazards(current_hazards)
 	if miles_today >= Wastes.BASE_MILES_PER_DAY:
 		_pass_day(false)  # a full day's march closes the day and starts a new stint
 	_refresh_ui()
@@ -282,7 +341,7 @@ func _travel_step(dest: Vector2i) -> void:
 ## (parked). The caller (_pass_day) owns hazard drift, the stint reset, and save.
 func _roll_day_tables(rested: bool) -> void:
 	var how := "Rested" if rested else "Marched %d mi" % Wastes.BASE_MILES_PER_DAY
-	var terrain: StringName = local_maps[selected_regional].get_tile(party_local).terrain
+	var terrain: StringName = local_field.get_tile(party_local).terrain
 	if terrain != VastGen.WASTES:
 		last_day_text = "%s · a day passes on %s — no encounter table for that terrain yet." % [how, terrain]
 	else:
@@ -380,7 +439,7 @@ func _build_ui() -> void:
 
 	new_dialog = ConfirmationDialog.new()
 	new_dialog.title = "New Regional Map"
-	new_dialog.dialog_text = "Roll a new regional map?\nThe current world and all explored local maps will be replaced."
+	new_dialog.dialog_text = "Roll a new regional map?\nThe current world and everything explored will be replaced."
 	new_dialog.ok_button_text = "Generate"
 	new_dialog.confirmed.connect(_on_new_map_confirmed)
 	layer.add_child(new_dialog)
@@ -422,7 +481,9 @@ func _on_scale_button(s: Scale) -> void:
 		Scale.REGIONAL:
 			_show_regional()
 		Scale.LOCAL:
-			if has_regional:
+			if has_local:
+				_resume_local()  # we've travelled before — keep the party's position
+			elif has_regional:
 				_enter_local(selected_regional)
 			else:
 				_refresh_ui()  # nothing selected yet; revert toggle
@@ -469,12 +530,13 @@ func _breadcrumb_text() -> String:
 		if has_regional:
 			s += "   ›   hex %d,%d (selected)" % [selected_regional.x, selected_regional.y]
 		return s
-	s += "   ›   Local %d,%d (%d mi across)" % [selected_regional.x, selected_regional.y, LOCAL_ACROSS]
 	if current_scale == Scale.LOCAL:
+		s += "   ›   Region %d,%d" % [current_region.x, current_region.y]
 		if current_hazards != null:
-			s += "   ›   Day %d · %d hazards" % [current_hazards.day, current_hazards.hazards.size()]
+			s += " · Day %d · %d hazards" % [current_hazards.day, current_hazards.hazards.size()]
 		s += "   ›   %d/%d mi today" % [miles_today, Wastes.BASE_MILES_PER_DAY]
 		return s
+	s += "   ›   Local %d,%d (%d mi across)" % [selected_regional.x, selected_regional.y, LOCAL_ACROSS]
 	s += "   ›   Dungeon %d,%d   ›   Level %d/%d" % [selected_local.x, selected_local.y, current_level + 1, DUNGEON_LEVELS]
 	return s
 

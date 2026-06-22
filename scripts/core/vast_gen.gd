@@ -12,6 +12,9 @@ const SETTLEMENTS := &"settlements"
 
 const REGIONAL_DICE := 8
 
+# A regional hex is ~6 one-mile hexes across (linear), so it owns ~36 fine hexes.
+const REGIONAL_SCALE := 6.0
+
 
 ## Regional terrain table (d6).  1 = Wastes, 2-4 = Ruins, 5-6 = Pillars.
 static func regional_terrain(roll: int) -> StringName:
@@ -77,6 +80,72 @@ static func generate_local(map: HexMap, parent: StringName, rng: RandomNumberGen
 	var dice := local_dice_count(rng)
 	for coord in _scatter(map.tiles.keys(), dice, rng):
 		map.get_tile(coord).terrain = local_terrain(rng.randi_range(1, 6), parent)
+
+
+# --- continuous 1-mile grid ---------------------------------------------------
+# The Local scale is one continuous field of 1-mile (fine) hexes; the Regional
+# map is a 6x zoom-out overlay. A fine hex belongs to whichever regional hex its
+# centre rounds to (fine->coarse hex rounding) — a gapless partition. Both grids
+# share the same (pointy) orientation, so the only difference is the 6x size.
+
+
+## The regional (coarse) hex that owns this 1-mile (fine) hex.
+static func coarse_of(fine: Vector2i) -> Vector2i:
+	var p := HexGrid.axial_to_pixel(fine, 1.0, false)
+	return HexGrid.pixel_to_axial(p, REGIONAL_SCALE, false)
+
+
+## The fine hex nearest a regional hex's centre (the party's entry point).
+static func region_center_fine(reg: Vector2i) -> Vector2i:
+	var p := HexGrid.axial_to_pixel(reg, REGIONAL_SCALE, false)
+	return HexGrid.pixel_to_axial(p, 1.0, false)
+
+
+## Every fine hex belonging to regional hex `reg` (~36 of them).
+static func region_fine_coords(reg: Vector2i) -> Array[Vector2i]:
+	var center := region_center_fine(reg)
+	var out: Array[Vector2i] = []
+	var rad := int(REGIONAL_SCALE) + 1
+	for dq in range(-rad, rad + 1):
+		for dr in range(-rad, rad + 1):
+			var fine := center + Vector2i(dq, dr)
+			if coarse_of(fine) == reg:
+				out.append(fine)
+	return out
+
+
+## Stock the fine hexes of regional hex `reg` into the continuous `field`, keyed
+## by the regional hex's terrain (same table as generate_local). Pillars regions
+## fill solid (impassable). A per-region seed makes the world stable across
+## sessions without persisting every tile. No-op if `reg` is off the world.
+static func generate_region(field: HexMap, regional_map: HexMap, reg: Vector2i, world_seed: int) -> void:
+	assert(field.scale == HexMap.Scale.LOCAL, "generate_region: field must be a Local map")
+	if not regional_map.has(reg):
+		return  # off the edge of the regional map / world
+	var coords := region_fine_coords(reg)
+	var parent: StringName = regional_map.get_tile(reg).terrain
+	var rng := RandomNumberGenerator.new()
+	rng.seed = region_seed(world_seed, reg)
+	if parent == PILLARS:
+		for c in coords:
+			_put(field, c, PILLARS)
+		return
+	for c in coords:
+		_put(field, c, WASTES)
+	var dice: int = min(local_dice_count(rng), coords.size())
+	for c in _scatter(coords, dice, rng):
+		field.get_tile(c).terrain = local_terrain(rng.randi_range(1, 6), parent)
+
+
+## Deterministic per-region seed from the world seed and the regional coord.
+static func region_seed(world_seed: int, reg: Vector2i) -> int:
+	return world_seed ^ (reg.x * 73856093) ^ (reg.y * 19349663)
+
+
+static func _put(field: HexMap, c: Vector2i, terrain: StringName) -> void:
+	if not field.tiles.has(c):
+		field.tiles[c] = HexTile.new(c)
+	field.tiles[c].terrain = terrain
 
 
 # --- helpers ---
