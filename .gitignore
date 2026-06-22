@@ -23,6 +23,9 @@ obj/
 # --- project-local tooling / scratch (not part of the game) ---
 .tools/shots/
 
+# Extracted rulebook text — copyright; reference only, never commit.
+the-vast-in-the-dark.md
+
 # OS / editor cruft -------------------------------------------------------
 Thumbs.db
 ehthumbs.db
