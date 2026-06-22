@@ -90,7 +90,51 @@ func _ready() -> void:
 	add_child(camera)
 
 	_build_ui()
-	_show_regional()
+	_restore_view()
+
+
+## Show the scale the save left off in (Dungeon isn't persisted yet, so it
+## surfaces to Local). A fresh world starts at Regional.
+func _restore_view() -> void:
+	match current_scale:
+		Scale.LOCAL, Scale.DUNGEON:
+			if has_regional:
+				_resume_local()
+			else:
+				_show_regional()
+		_:
+			_show_regional()
+
+
+# --- persistence of dynamic state ---
+
+## The dynamic save: party position/stint/scale and every region whose hazards
+## have been roamed (so drift survives a reload).
+func _dynamic_state() -> Dictionary:
+	var hazards := {}
+	for reg in region_hazards:
+		if region_hazards[reg] != null:
+			hazards[WorldSave.key(reg)] = WorldSave.hazards_to_dict(region_hazards[reg])
+	return {
+		"scale": int(current_scale),
+		"party_local": WorldSave.key(party_local),
+		"miles_today": miles_today,
+		"selected_regional": WorldSave.key(selected_regional),
+		"selected_local": WorldSave.key(selected_local),
+		"has_regional": has_regional,
+		"has_local": has_local,
+		"hazards": hazards,
+	}
+
+
+func _save() -> void:
+	WorldSave.save_world(regional_map, world_seed, _dynamic_state())
+
+
+func _notification(what: int) -> void:
+	# Autosave on window close so a mid-journey quit isn't lost.
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and regional_map != null:
+		_save()
 
 
 # --- world creation / persistence ---
@@ -102,9 +146,13 @@ func _new_world() -> void:
 	world_seed = int(rng.randi())
 	_reset_local_field()
 	dungeons.clear()
+	current_scale = Scale.REGIONAL
+	party_local = Vector2i.ZERO
+	current_region = Vector2i.ZERO
+	miles_today = 0
 	has_regional = false
 	has_local = false
-	WorldSave.save_world(regional_map, world_seed)
+	_save()
 
 
 func _load_world() -> void:
@@ -113,6 +161,24 @@ func _load_world() -> void:
 	world_seed = w["world_seed"]
 	_reset_local_field()
 	dungeons.clear()  # dungeons are placeholder; regenerated lazily
+	_restore_state(w["state"])
+
+
+## Restore the dynamic save (party position/stint/scale + roamed hazards). Empty
+## for a brand-new world. All fields are present in a save of the current version.
+func _restore_state(st: Dictionary) -> void:
+	if st.is_empty():
+		return
+	current_scale = int(st["scale"])
+	party_local = WorldSave.parse_key(st["party_local"])
+	miles_today = int(st["miles_today"])
+	selected_regional = WorldSave.parse_key(st["selected_regional"])
+	selected_local = WorldSave.parse_key(st["selected_local"])
+	has_regional = bool(st["has_regional"])
+	has_local = bool(st["has_local"])
+	# Roamed hazards, so re-entry shows the same dice on the same day.
+	for k in st["hazards"]:
+		region_hazards[WorldSave.parse_key(k)] = WorldSave.dict_to_hazards(st["hazards"][k])
 
 
 ## Fresh, empty continuous Local field (filled lazily per region on exploration).
@@ -147,6 +213,7 @@ func _show_regional() -> void:
 		hex_view.set_selected(selected_regional)
 	camera.position = regional_map.pixel_center(HEX_SIZE)
 	camera.set_zoom_level(0.8)
+	_save()
 	_refresh_ui()
 
 
@@ -182,6 +249,7 @@ func _show_local_view() -> void:
 	hex_view.set_party(party_local)
 	camera.set_zoom_level(1.0)
 	_recentre_on_party()  # frame on the party, not the bare map centre
+	_save()
 	_refresh_ui()
 
 
@@ -199,6 +267,7 @@ func _enter_dungeon(loc: Vector2i) -> void:
 	dungeon_view.set_level(current_dungeon.levels[current_level], DUNGEON_CELL)
 	camera.position = Vector2(DUNGEON_W * DUNGEON_CELL * 0.5, DUNGEON_H * DUNGEON_CELL * 0.5)
 	camera.set_zoom_level(0.9)
+	_save()
 	_refresh_ui()
 
 
@@ -272,6 +341,7 @@ func _pass_day(rested: bool = false) -> void:
 		current_hazards.advance_day(region_submaps[current_region], rng)
 		hex_view.set_hazards(current_hazards)
 	miles_today = 0  # a closed day (marched or rested) starts a fresh 18-mile stint
+	_save()
 	_refresh_ui()
 
 

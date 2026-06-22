@@ -5,7 +5,7 @@ class_name WorldSave
 ## No silent fallbacks: any I/O, format, or version problem raises (assert).
 
 const PATH := "user://vast_world.json"
-const VERSION := 3  # v3: continuous Local field is seed-derived (drops per-map locals/hazards)
+const VERSION := 4  # v4: adds dynamic state (party position/stint/scale + roamed hazards)
 
 
 static func has_save() -> bool:
@@ -28,11 +28,14 @@ static func save_version() -> int:
 	return int(data.get("version", -1))
 
 
-static func save_world(regional: HexMap, world_seed: int) -> void:
+## `state` holds the dynamic save: party position/stint/scale and any region whose
+## hazards have been roamed. It is stored verbatim (already JSON-safe) under "state".
+static func save_world(regional: HexMap, world_seed: int, state: Dictionary = {}) -> void:
 	var data := {
 		"version": VERSION,
 		"world_seed": world_seed,
 		"regional": _map_to_dict(regional),
+		"state": state,
 	}
 	var f := FileAccess.open(PATH, FileAccess.WRITE)
 	assert(f != null, "WorldSave.save_world: cannot write %s (err %d)" % [PATH, FileAccess.get_open_error()])
@@ -40,7 +43,7 @@ static func save_world(regional: HexMap, world_seed: int) -> void:
 	f.close()
 
 
-## Returns { "regional": HexMap, "world_seed": int }.
+## Returns { "regional": HexMap, "world_seed": int, "state": Dictionary }.
 static func load_world() -> Dictionary:
 	assert(has_save(), "WorldSave.load_world: no save at %s" % PATH)
 	var f := FileAccess.open(PATH, FileAccess.READ)
@@ -53,10 +56,39 @@ static func load_world() -> Dictionary:
 	var ver := int(data.get("version", -1))
 	assert(ver == VERSION, "WorldSave.load_world: unsupported version %s (need %d)" % [str(data.get("version")), VERSION])
 	assert(data.has("world_seed"), "WorldSave.load_world: missing world_seed")
+	var state: Dictionary = data["state"] if data.has("state") and data["state"] is Dictionary else {}
 	return {
 		"regional": _dict_to_map(data["regional"]),
 		"world_seed": int(data["world_seed"]),
+		"state": state,
 	}
+
+
+# --- hazard (de)serialisation, for the dynamic state ---
+
+static func hazards_to_dict(hs: HazardSet) -> Dictionary:
+	var list := []
+	for h in hs.hazards:
+		list.append({"hex": _key(h.hex), "kind": int(h.kind)})
+	return {"day": int(hs.day), "hazards": list}
+
+
+static func dict_to_hazards(d: Dictionary) -> HazardSet:
+	var hs := HazardSet.new()
+	hs.day = int(d["day"])
+	for entry in d["hazards"]:
+		var kind := int(entry["kind"])
+		assert(kind >= 0 and kind < HazardSet.Kind.size(), "dict_to_hazards: bad kind %d" % kind)
+		hs.hazards.append(HazardSet.Hazard.new(_parse_key(entry["hex"]), kind))
+	return hs
+
+
+static func key(c: Vector2i) -> String:
+	return _key(c)
+
+
+static func parse_key(s: String) -> Vector2i:
+	return _parse_key(s)
 
 
 static func delete_save() -> void:
