@@ -27,7 +27,23 @@ Each quirk's *effect* (e.g. Long-walker +6 mi/day, Ruin Plucker +1 slot,
 Hollow Fortitude 3-in-6 to skip exhaustion) wires into its system as that system
 is built; this pass is the table + the selection rule.
 
-## Inventory (p7) — pending (blocked by ability-score model)
+## Ability scores — ✅ implemented (project decision: DCC-style)
+
+The zine is system-agnostic but its character sheet uses the six standard
+abilities **STR / DEX / CON / INT / WIS / CHA**. Per project decision we use
+**DCC-style** math: each ability is **3d6** (3–18), and the modifier is
+`floor((score − 10) / 2)`, giving **−4** (at 3) through **+4** (at 18). These
+bonuses feed inventory slots (CON), Grit (CON) and Flesh (highest).
+
+> [scripts/core/abilities.gd](scripts/core/abilities.gd) ·
+> [tests/test_abilities.gd](tests/test_abilities.gd)
+
+```text
+modifier(score) = floor((score - 10) / 2)     # 3 -> -4 ... 10 -> 0 ... 18 -> +4
+roll_score(rng) = 3d6
+```
+
+## Inventory (p7) — pending
 
 Slots = **Constitution bonus**. Items cost 1–4 slots. In a settlement you may
 dedicate slots to a purpose at **10 coin/slot** and draw items later. Packs:
