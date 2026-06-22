@@ -56,12 +56,30 @@ Damage representing erosion, not wounds. Gain a level on: lost sleep, severe
 wound, a day without food, or pushing too hard (forced march). A full day's rest
 (no travel) removes one level. A **7th** level is a Harrowing hardship.
 
-## Grit & Flesh (p7) — pending (blocked by ability-score model)
+## Grit & Flesh (p7) — ✅ implemented
 
-Replaces Hit Points. **Grit** = 1d8/level + CON bonus; lost first; heals 1d6/day
-(2d6 on a full rest day). **Flesh** = Level + highest ability bonus; lost only
-after Grit; can't heal until a Settlement/medic, then 1/day; each Flesh loss
-records an injury on a random stat (disadvantage with it).
+Replaces Hit Points. **Grit** = 1d8/level + CON modifier; lost first; heals
+1d6/day (2d6 on a full rest day). **Flesh** = Level + highest ability modifier;
+lost only after Grit; can't heal until a Settlement/medic, then 1/day; each
+Flesh point lost records an injury on a random stat (disadvantage with it).
+Reaching 0 Flesh is the "dropped to 0 hit points" Harrowing hardship.
+
+> [scripts/core/traveler.gd](scripts/core/traveler.gd) ·
+> [tests/test_traveler_health.gd](tests/test_traveler_health.gd)
+
+```text
+grit_max  = sum(1d8 for each level) + CON_mod        # floored at 1
+flesh_max = level + highest_ability_mod              # floored at 1
+
+take_damage(n): grit absorbs first; overflow cuts Flesh 1-by-1, each lost
+                Flesh point -> one injury on a random stat (disadvantage)
+heal_grit(rest): + (2d6 if rest else 1d6), capped at grit_max
+heal_flesh():    + 1 (Settlement/medic only), capped at flesh_max
+```
+
+> Assumptions flagged: CON mod added **once** (not per level); both pools
+> **floored at 1** (the page states no minimum); injuries persist (the page
+> doesn't define their removal — left to Settlement/medic discretion).
 
 ## The Harrowing (p8) — pending
 
