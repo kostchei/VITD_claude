@@ -43,12 +43,27 @@ modifier(score) = floor((score - 10) / 2)     # 3 -> -4 ... 10 -> 0 ... 18 -> +4
 roll_score(rng) = 3d6
 ```
 
-## Inventory (p7) — pending
+## Inventory (p7) — ✅ implemented
 
-Slots = **Constitution bonus**. Items cost 1–4 slots. In a settlement you may
-dedicate slots to a purpose at **10 coin/slot** and draw items later. Packs:
-Bindle +2 (20c), Sack +6 (80c), Backpack +10 (120c). Cargo: Pulk 10 slots
-(12 mi/day if pulled alone), Sleigh 20 slots (12 mi/day if ≤2 pull).
+Capacity = **CON modifier + Pack/Cargo bonuses** (floored at 0). The book's
+10-slot example sheet is a CON-0 Traveler carrying a Backpack. Items cost 1–4
+slots. In a settlement you may dedicate slots to a purpose at **10 coin/slot**
+and draw a relevant item later. Packs: Bindle +2 (20c), Sack +6 (80c), Backpack
++10 (120c). Cargo: Pulk 10 slots (12 mi/day if pulled alone), Sleigh 20 slots
+(12 mi/day if ≤2 pull).
+
+> [scripts/core/inventory.gd](scripts/core/inventory.gd) ·
+> [tests/test_inventory.gd](tests/test_inventory.gd)
+
+```text
+capacity = max(0, CON_mod + sum(pack.slots) + sum(cargo.slots))
+add_item(name): fits if item_slots(name) <= free_slots()
+dedicate(n): reserve n slots, cost = n * 10 coin
+draw(name):  realise a reserved item if item_slots(name) <= reserved
+```
+
+> Cargo speed cap (Pulk/Sleigh → 12 mi/day when under-crewed) is stored as data;
+> applying it to the travel loop is a follow-up wiring task.
 
 ## Exhaustion (p7) — ✅ implemented
 
