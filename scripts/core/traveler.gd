@@ -17,6 +17,12 @@ var flesh_max: int = 1
 var flesh: int = 1
 var injuries: Array = []             # [{ "ability": Abilities.Ability, "note": String }]
 
+# Exhaustion (rules p7): damage from erosion, not wounds. A 7th level is a
+# Harrowing hardship (see The Harrowing). Reasons a level is gained:
+enum ExhaustionCause { LOST_SLEEP, SEVERELY_WOUNDED, NO_FOOD, PUSHED_TOO_HARD }
+const EXHAUSTION_HARROWING_LEVEL := 7
+var exhaustion: int = 0
+
 
 ## Build a fresh Traveler from a level + ability scores. Grit is rolled (1d8 per
 ## level + CON mod), Flesh is Level + highest mod; both start full. Floored at 1
@@ -85,6 +91,26 @@ func heal_flesh_in_settlement() -> int:
 ## True once Flesh hits 0 (the "dropped to 0 hit points" Harrowing hardship).
 func is_down() -> bool:
 	return flesh <= 0
+
+
+## Gain one (or more) levels of exhaustion. Returns true if this pushed the
+## Traveler to the 7th level — itself a Harrowing hardship (see The Harrowing).
+## (The Hollow Fortitude quirk's 3-in-6 skip is applied by the caller for now.)
+func gain_exhaustion(_cause: int = ExhaustionCause.PUSHED_TOO_HARD, amount: int = 1) -> bool:
+	assert(amount >= 1, "gain_exhaustion: amount must be >= 1")
+	var was_below := exhaustion < EXHAUSTION_HARROWING_LEVEL
+	exhaustion += amount
+	return was_below and exhaustion >= EXHAUSTION_HARROWING_LEVEL
+
+
+## A full day of rest (no travel) removes one level of exhaustion (min 0).
+func rest_full_day() -> void:
+	exhaustion = maxi(0, exhaustion - 1)
+
+
+## At/over the 7th level — the threshold that triggers a Harrowing hardship.
+func is_overexhausted() -> bool:
+	return exhaustion >= EXHAUSTION_HARROWING_LEVEL
 
 
 ## Does the Traveler have an injury recorded on this ability (disadvantage)?

@@ -50,11 +50,26 @@ dedicate slots to a purpose at **10 coin/slot** and draw items later. Packs:
 Bindle +2 (20c), Sack +6 (80c), Backpack +10 (120c). Cargo: Pulk 10 slots
 (12 mi/day if pulled alone), Sleigh 20 slots (12 mi/day if ≤2 pull).
 
-## Exhaustion (p7) — pending
+## Exhaustion (p7) — ✅ implemented
 
 Damage representing erosion, not wounds. Gain a level on: lost sleep, severe
 wound, a day without food, or pushing too hard (forced march). A full day's rest
 (no travel) removes one level. A **7th** level is a Harrowing hardship.
+
+> On the `Traveler` class:
+> [scripts/core/traveler.gd](scripts/core/traveler.gd) ·
+> [tests/test_exhaustion.gd](tests/test_exhaustion.gd)
+
+```text
+gain_exhaustion(cause): exhaustion += 1; return true if it just reached the 7th
+rest_full_day():        exhaustion = max(0, exhaustion - 1)
+is_overexhausted():     exhaustion >= 7      # Harrowing hardship trigger
+```
+
+> Hollow Fortitude quirk (3-in-6 to skip exhaustion) is applied by the caller
+> until the quirk-effect layer exists. Integration with the daily ration/forced-
+> march loop (`main.gd` / `wastes.gd`, which still use a placeholder empty party)
+> is a follow-up wiring task.
 
 ## Grit & Flesh (p7) — ✅ implemented
 
