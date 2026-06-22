@@ -66,22 +66,6 @@ static func generate_regional(map: HexMap, rng: RandomNumberGenerator) -> void:
 		map.get_tile(coord).terrain = regional_terrain(rng.randi_range(1, 6))
 
 
-## Step 2 — stock a local map for the given parent regional terrain.
-## Pillars are filled solid and not stocked (impassable, not subdivided).
-static func generate_local(map: HexMap, parent: StringName, rng: RandomNumberGenerator) -> void:
-	assert(map.scale == HexMap.Scale.LOCAL, "generate_local: not a local map")
-	if parent == PILLARS:
-		for coord in map.tiles:
-			map.get_tile(coord).terrain = PILLARS
-		return
-	assert(parent == RUINS or parent == WASTES,
-		"generate_local: parent must be ruins/wastes/pillars, got %s" % parent)
-	_fill_wastes(map)
-	var dice := local_dice_count(rng)
-	for coord in _scatter(map.tiles.keys(), dice, rng):
-		map.get_tile(coord).terrain = local_terrain(rng.randi_range(1, 6), parent)
-
-
 # --- continuous 1-mile grid ---------------------------------------------------
 # The Local scale is one continuous field of 1-mile (fine) hexes; the Regional
 # map is a 6x zoom-out overlay. A fine hex belongs to whichever regional hex its

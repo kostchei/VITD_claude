@@ -22,12 +22,11 @@ weather + encounter, drifts hazards, resets the stint). Persistence covers maps
 
 ## Tier A — make travel actually traverse the world
 
-### 1. Continuous 1-mile Local grid (chunked per-region generation)
-Travel is trapped inside one standalone **37-hex hexagon** per regional hex
-([`HexMap.make_local`](scripts/core/hex_map.gd) + [`generate_local`](scripts/core/vast_gen.gd)),
-and the only way out is Back → Regional → re-enter (which rebuilds the map and
-resets the party). Replace that discrete model with **one continuous 1-mile
-axial grid**, where the regional map is just a **6× zoom-out overlay**: each
+### 1. Continuous 1-mile Local grid (chunked per-region generation) — ✅ DONE
+Travel used to be trapped inside one standalone **37-hex hexagon** per regional
+hex, and the only way out was Back → Regional → re-enter (which rebuilt the map
+and reset the party). Replaced with **one continuous 1-mile axial grid**, where
+the regional map is just a **6× zoom-out overlay** ([`VastGen.coarse_of`](scripts/core/vast_gen.gd)): each
 1-mile hex belongs to whichever regional hex its centre rounds to (fine→coarse
 hex rounding) — a gapless, overlap-free partition by construction, no tiling
 tricks. A 6-mile-across regional hex holds **~36 one-mile hexes** (6² area);
@@ -45,15 +44,11 @@ that's what the old 37-hex hexagon was approximating.
   `hex_map_view.gd`, `main.gd`. **Depends on:** none. **Effort:** M–L (data-model
   refactor). **Done already:** free pan + ⌖ Recentre button.
 
-### 2. Travel / party-state persistence
-`party_local`, `miles_today`, and the travel day live only in `main.gd` and
-reset on re-entering a local map. With #1 letting the party roam one continuous
-field, this state and the generated fine-hex chunks must survive saves.
-- **Build:** extend `WorldSave` (bump version) to store the party's position +
-  current stint/day, and persist generated fine-hex chunks (keyed by regional
-  hex to keep saves bounded).
-- **Touches:** `world_save.gd`, `main.gd`. **Depends on:** pairs with #1.
-  **Effort:** S–M.
+### 2. Travel / party-state persistence — ✅ DONE
+Party position, stint, scale, and roamed hazards now persist (`WorldSave` v4),
+and the game autosaves on scale transitions, day close, and window close. The
+continuous field stays seed-derived, so no per-tile terrain is saved. Reloading
+resumes in the scale and spot you left off.
 
 ---
 
@@ -148,6 +143,7 @@ lazily).
 10           (the dungeon scale, its own large effort)
 ```
 
-Items 1–2 deliver the most visible gameplay for the least work and don't depend
-on the party model, so they're the recommended immediate next step. Item 3 is
-the gate for all of Tier B.
+Items 1–2 are **done** (continuous travel + persistence). **Item 3 (the party
+model) is next** and is the gate for all of Tier B — but it needs the source's
+character/stats rules (HP, ability scores, *Save v. X*) to build faithfully,
+the same way the weather/encounter tables came from a rules page.

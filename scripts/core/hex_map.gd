@@ -5,9 +5,6 @@ class_name HexMap
 enum Scale { REGIONAL, LOCAL }
 enum Orientation { POINTY, FLAT }
 
-# Local map: clean flat-top hexagon-of-hexes; 6 sub-hexes span it angle-to-angle.
-const LOCAL_RADIUS := 3
-
 var scale: Scale = Scale.REGIONAL
 var orientation: int = Orientation.POINTY  # Orientation enum; typed int for cross-class checks
 var tiles: Dictionary = {}  # Vector2i(q, r) -> HexTile
@@ -34,23 +31,6 @@ static func make_rectangular(cols: int, rows: int) -> HexMap:
 			var q := col - (row - (row & 1)) / 2  # odd-r offset -> axial
 			var coord := Vector2i(q, row)
 			m.tiles[coord] = HexTile.new(coord)
-	return m
-
-
-## Local map: clean hexagon-of-hexes (no clipping). Point-up 1-mile sub-hexes
-## forming a flat-side-up regional hex: 7 across the straight axes, 6 along the
-## angle-to-angle diagonal. 1 hex = 1 mile.
-static func make_local() -> HexMap:
-	var m := HexMap.new()
-	m.scale = Scale.LOCAL
-	m.orientation = Orientation.POINTY
-	for q in range(-LOCAL_RADIUS, LOCAL_RADIUS + 1):
-		var r_lo: int = max(-LOCAL_RADIUS, -q - LOCAL_RADIUS)
-		var r_hi: int = min(LOCAL_RADIUS, -q + LOCAL_RADIUS)
-		for r in range(r_lo, r_hi + 1):
-			var coord := Vector2i(q, r)
-			m.tiles[coord] = HexTile.new(coord)
-	assert(not m.tiles.is_empty(), "make_local_flat produced no tiles")
 	return m
 
 
