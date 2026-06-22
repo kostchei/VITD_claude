@@ -111,8 +111,24 @@ heal_flesh():    + 1 (Settlement/medic only), capped at flesh_max
 > **floored at 1** (the page states no minimum); injuries persist (the page
 > doesn't define their removal — left to Settlement/medic discretion).
 
-## The Harrowing (p8) — pending
+## The Harrowing (p8) — ✅ implemented
 
-Pick **5 memories/drives**. On a hardship (drop to 0, gain a 7th exhaustion
-level, an object/place effect, a great tragedy) there's a chance to lose one.
-Lose the 5th → slain / become an NPC / wander into the dark.
+Pick **5 memories/drives**. On a hardship (drop to 0 Flesh, gain a 7th
+exhaustion level, an object/place effect, a great tragedy) there's a chance to
+lose one. Lose the 5th → **slain / become an NPC / wander into the dark**.
+
+> On the `Traveler` class:
+> [scripts/core/traveler.gd](scripts/core/traveler.gd) ·
+> [tests/test_harrowing.gd](tests/test_harrowing.gd)
+
+```text
+set_memories([5])
+resolve_hardship(cause, chance_in_6, rng):  # book leaves the odds to the GM
+    if 1d6 <= chance_in_6: lose_memory(); return harrowed if none remain
+harrowed_fate(rng): SLAIN | BECOME_NPC | WANDER   # when all 5 are gone
+```
+
+> The book states only "there is a chance" to lose a memory — the probability is
+> GM discretion, so `chance_in_6` is a caller parameter rather than a guessed
+> constant. The 0-Flesh and 7th-exhaustion triggers are already on the Traveler
+> (`is_down`, `is_overexhausted`).

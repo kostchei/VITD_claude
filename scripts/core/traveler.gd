@@ -23,6 +23,13 @@ enum ExhaustionCause { LOST_SLEEP, SEVERELY_WOUNDED, NO_FOOD, PUSHED_TOO_HARD }
 const EXHAUSTION_HARROWING_LEVEL := 7
 var exhaustion: int = 0
 
+# The Harrowing (rules p8): 5 memories/drives. A hardship may cost one; losing
+# the 5th means the Traveler is slain / becomes an NPC / wanders into the dark.
+enum HarrowingHardship { DROPPED_TO_ZERO, SEVENTH_EXHAUSTION, OBJECT_OR_PLACE, GREAT_TRAGEDY }
+enum HarrowedFate { SLAIN, BECOME_NPC, WANDER }
+const MEMORY_COUNT := 5
+var memories: Array = []              # the chosen memories/drives (strings)
+
 
 ## Build a fresh Traveler from a level + ability scores. Grit is rolled (1d8 per
 ## level + CON mod), Flesh is Level + highest mod; both start full. Floored at 1
@@ -124,3 +131,44 @@ func has_injury(ability: int) -> bool:
 func _random_ability(rng: RandomNumberGenerator) -> int:
 	var all := Abilities.Ability.values()
 	return all[rng.randi_range(0, all.size() - 1)]
+
+
+# --- The Harrowing (rules p8) ---
+
+## Choose the Traveler's 5 memories/drives (on first entering the Vast).
+func set_memories(chosen: Array) -> void:
+	assert(chosen.size() == MEMORY_COUNT, "set_memories: need exactly %d" % MEMORY_COUNT)
+	memories = chosen.duplicate()
+
+
+## Lose one random memory to the Harrowing. Returns true if it was the **last**
+## one (the Traveler is now Harrowed — see harrowed_fate). Asserts if none left.
+func lose_memory(rng: RandomNumberGenerator) -> bool:
+	assert(not memories.is_empty(), "lose_memory: no memories remain")
+	memories.remove_at(rng.randi_range(0, memories.size() - 1))
+	return memories.is_empty()
+
+
+## Resolve a hardship: the book says only "there is a chance" to lose a memory —
+## the odds are left to the GM, so the caller supplies `chance_in_6` (0-6).
+## Rolls 1d6; on <= chance, lose a memory. Returns { lost, harrowed }.
+func resolve_hardship(_cause: int, chance_in_6: int, rng: RandomNumberGenerator) -> Dictionary:
+	assert(chance_in_6 >= 0 and chance_in_6 <= 6, "resolve_hardship: chance_in_6 out of range")
+	var lost := false
+	var harrowed := false
+	if rng.randi_range(1, 6) <= chance_in_6 and not memories.is_empty():
+		lost = true
+		harrowed = lose_memory(rng)
+	return {"lost": lost, "harrowed": harrowed}
+
+
+## True once every memory is gone.
+func is_harrowed() -> bool:
+	return memories.is_empty()
+
+
+## When Harrowed, the Traveler is slain, becomes an NPC, or wanders into the dark.
+func harrowed_fate(rng: RandomNumberGenerator) -> int:
+	assert(is_harrowed(), "harrowed_fate: not yet Harrowed")
+	var fates := HarrowedFate.values()
+	return fates[rng.randi_range(0, fates.size() - 1)]
