@@ -49,6 +49,7 @@ var journal: Label
 var back_btn: Button
 var new_btn: Button
 var next_day_btn: Button
+var recentre_btn: Button
 var new_dialog: ConfirmationDialog
 var scale_btns := {}   # Scale -> Button
 var level_panel: VBoxContainer
@@ -146,8 +147,8 @@ func _enter_local(reg: Vector2i) -> void:
 	miles_today = 0
 	last_day_text = ""
 	hex_view.set_party(party_local)
-	camera.position = m.pixel_center(HEX_SIZE)
 	camera.set_zoom_level(1.0)
+	_recentre_on_party()  # frame on the party, not the bare map centre
 	_refresh_ui()
 
 
@@ -253,6 +254,16 @@ func _on_hex_clicked(c: Vector2i) -> void:
 
 
 # --- travel ---
+
+## Snap the camera to the party's hex. Free panning (drag / WASD) stays as-is;
+## this just gets you back when you've wandered the view off the party.
+func _recentre_on_party() -> void:
+	if current_scale != Scale.LOCAL or not local_maps.has(selected_regional):
+		return
+	var m: HexMap = local_maps[selected_regional]
+	var flat := m.orientation == HexMap.Orientation.FLAT
+	camera.position = HexGrid.axial_to_pixel(party_local, HEX_SIZE, flat)
+
 
 ## Move the party one hex (= 1 mile). Each completed 18 miles is a day, which
 ## rolls weather + an encounter on the current hex's terrain table.
@@ -361,6 +372,12 @@ func _build_ui() -> void:
 	next_day_btn.pressed.connect(_pass_day.bind(true))
 	controls.add_child(next_day_btn)
 
+	# Recentre the camera on the party (Local scale only); panning is free.
+	recentre_btn = Button.new()
+	recentre_btn.text = "⌖ Recentre"
+	recentre_btn.pressed.connect(_recentre_on_party)
+	controls.add_child(recentre_btn)
+
 	new_dialog = ConfirmationDialog.new()
 	new_dialog.title = "New Regional Map"
 	new_dialog.dialog_text = "Roll a new regional map?\nThe current world and all explored local maps will be replaced."
@@ -422,6 +439,7 @@ func _refresh_ui() -> void:
 	journal.text = last_day_text if current_scale == Scale.LOCAL else ""
 	back_btn.disabled = current_scale == Scale.REGIONAL
 	next_day_btn.visible = current_scale == Scale.LOCAL
+	recentre_btn.visible = current_scale == Scale.LOCAL
 
 	scale_btns[Scale.REGIONAL].button_pressed = current_scale == Scale.REGIONAL
 	scale_btns[Scale.LOCAL].button_pressed = current_scale == Scale.LOCAL
