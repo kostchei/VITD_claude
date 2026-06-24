@@ -68,7 +68,7 @@ const CURIOSITY_NAMES := [
 	"Ruin outcropping", "Abandoned camp", "Stone totem", "Desiccated corpses",
 	"Burial cairn", "Cache of lodestone", "Nomad in black", "Collapsed tower",
 	"Lodestone obelisk", "Traveler tied to a pillar", "Unearthed road", "Swarm",
-	"Lonely graves", "Nest", "Plague-ridden corpse", "Secret tunnel",
+	"Lonely graves", "Nest", "Crawl corpse", "Secret tunnel",
 	"Message", "Lost caravan", "Bereft Swordsman", "Forgotten treasure",
 ]
 # Rolls whose Curiosity provides shelter (the counter to harmful weather).

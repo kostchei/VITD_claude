@@ -58,6 +58,7 @@ func run() -> Array:
 	for roll in range(1, 21):
 		TestKit.ok(f, Wastes.curiosity(roll) != "", "curiosity %d named" % roll)
 	TestKit.eq(f, Wastes.curiosity(1), "Ruin outcropping", "1 = Ruin outcropping")
+	TestKit.eq(f, Wastes.curiosity(15), "Crawl corpse", "15 = Crawl corpse (per rulebook)")
 	TestKit.eq(f, Wastes.curiosity(20), "Forgotten treasure", "20 = Forgotten treasure")
 	for roll in [1, 8, 16]:
 		TestKit.ok(f, Wastes.curiosity_provides_shelter(roll), "curiosity %d shelters" % roll)
