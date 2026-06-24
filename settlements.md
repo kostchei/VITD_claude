@@ -23,10 +23,23 @@ generate(rng):    rolls all three + location_count + faction_count
 > Reservoir / Paddock locations add **+1 to the Scarcity roll**; applied by the
 > caller once locations are known (handled with the Locations table, #16).
 
-## Settlement Locations 1d12 (p17) — pending (#16)
+## Settlement Locations 1d12 (p17) — ✅ implemented
 
-Storyteller, Scrap Smithy, Apothecary, Pyromancer Foundry, Magus Sanctum,
-Reservoir, Bazaar, Cartographer Roost, Lodestone Carver, Memorial Shrine,
-Paddock, Nomad Hold — each a boon (e.g. Lodestone Carver: Raw Lodestone → 100
-coins; Storyteller: 1-in-6/day extra exhaustion recovery; Memorial Shrine:
-replace a lost memory when a companion dies). Count by Population.
+> [scripts/core/settlement_locations.gd](scripts/core/settlement_locations.gd) ·
+> [tests/test_settlement_locations.gd](tests/test_settlement_locations.gd)
+
+A settlement has `location_count` of these (rolled 1d12 each). Each offers a
+boon; **Reservoir** and **Paddock** also add **+1 to the Scarcity roll**.
+
+```text
+1 Storyteller (1-in-6/day extra exhaustion recovery) · 2 Scrap Smithy (repair/renew metal) ·
+3 Apothecary (craft Hellfire/Hearthfire/Remedy/Malady) · 4 Pyromancer Foundry (Jarred Fire) ·
+5 Magus Sanctum (lodestone -> Magic Scroll) · 6 Reservoir (+1 Scarcity) ·
+7 Bazaar (barter common items) · 8 Cartographer Roost (buy Directions) ·
+9 Lodestone Carver (1 Raw Lodestone -> 100 coin) · 10 Memorial Shrine (replace a lost
+memory when a companion dies) · 11 Paddock (+1 Scarcity) · 12 Nomad Hold (recruit companions)
+```
+
+> Crafting recipes (Apothecary/Pyromancer monster-part tools) are captured as
+> description data; their effects are a follow-up once combat/items exist.
+> `total_scarcity_mod(ids)` feeds the +1s back into the Scarcity roll (#15).
