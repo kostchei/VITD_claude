@@ -11,12 +11,23 @@ func _init() -> void:
 	var total_tests := files.size()
 	print("\n=== Running %d test file(s) ===" % total_tests)
 	for path in files:
-		var script: GDScript = load(path)
-		assert(script != null, "run_tests: cannot load %s" % path)
-		var inst: Object = script.new()
-		assert(inst.has_method("run"), "run_tests: %s has no run()" % path)
-		var failures: Array = inst.run()
 		var fname: String = path.get_file()
+		var script: GDScript = load(path)
+		if script == null:
+			print("  FAIL  %s — failed to load/compile" % fname)
+			total_failures += 1
+			continue
+		var inst: Object = script.new()
+		if inst == null or not inst.has_method("run"):
+			print("  FAIL  %s — no run() method" % fname)
+			total_failures += 1
+			continue
+		var result: Variant = inst.run()
+		if not (result is Array):
+			print("  FAIL  %s — run() did not return an Array" % fname)
+			total_failures += 1
+			continue
+		var failures: Array = result
 		if failures.is_empty():
 			print("  PASS  %s" % fname)
 		else:

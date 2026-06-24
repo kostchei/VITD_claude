@@ -23,6 +23,10 @@ enum ExhaustionCause { LOST_SLEEP, SEVERELY_WOUNDED, NO_FOOD, PUSHED_TOO_HARD }
 const EXHAUSTION_HARROWING_LEVEL := 7
 var exhaustion: int = 0
 
+# Rations carried for daily upkeep (Wastes.upkeep spends one/day or the Traveler
+# gains exhaustion). Tracked here as a simple count; ties into Inventory later.
+var rations: int = 0
+
 # The Harrowing (rules p8): 5 memories/drives. A hardship may cost one; losing
 # the 5th means the Traveler is slain / becomes an NPC / wanders into the dark.
 enum HarrowingHardship { DROPPED_TO_ZERO, SEVENTH_EXHAUSTION, OBJECT_OR_PLACE, GREAT_TRAGEDY }

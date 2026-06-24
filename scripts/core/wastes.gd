@@ -75,19 +75,6 @@ const CURIOSITY_NAMES := [
 const CURIOSITY_SHELTER_ROLLS := [1, 8, 16]
 
 
-## One member of the travelling party. Carries the survival state the day-cycle
-## actually mutates: rations spent each day and accumulated exhaustion.
-class Traveler:
-	var name: String
-	var rations: int
-	var exhaustion: int
-
-	func _init(traveler_name: String = "Traveler", starting_rations: int = 0) -> void:
-		name = traveler_name
-		rations = starting_rations
-		exhaustion = 0
-
-
 ## Outcome of one day: what was rolled, how far the party got, and any weather
 ## effects that still need adjudication (saves/damage) by a combat layer.
 class DayReport:
