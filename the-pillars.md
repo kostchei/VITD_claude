@@ -32,15 +32,32 @@ loot(1d6 + depth):        1-3 Forgotten Corpse · 4-6 Raw Lodestone(1d10) ·
 > Dark" exhaustion/memory cost) are reported by name; they wire into the
 > encounter/combat/reward layers as those land.
 
-## Mining the Pillars (p14) — pending (#12)
+## Mining the Pillars (p14) — ✅ implemented
 
-Per hour: Gathering = 1d2 Raw Lodestone + 1d6 to the encounter roll; Mining
-(needs tools) = 1d6 Raw Lodestone + 2d6 to the encounter roll. Each Raw
-Lodestone = 1 slot; refined at a settlement = 1d10×10 coins.
+> [scripts/core/pillars.gd](scripts/core/pillars.gd) ·
+> [tests/test_pillars.gd](tests/test_pillars.gd)
 
-## Pillar encounter table (p14) — pending (#13)
+Per hour: **Gathering** = 1d2 Raw Lodestone + 1d6 to the encounter roll;
+**Mining** (needs tools) = 1d6 Raw Lodestone + 2d6 to the encounter roll. Each
+Raw Lodestone = 1 slot; refined at a settlement = **1d10×10 coins**.
 
-Read on **1d6 + mining/gathering modifier**: 1-2 Nothing, 3 Lost Travelers,
-4 Lodestone Miners(+mood), 5 Merchants, 6 Cyclops, 7 Bandits(+mood),
-8 Harpies, 9 Cutthroats(+mood), 10 Medusa, 11 2d6 Cyclops, 12 Ogre,
-13 2d6 Harpies, 14 Shade, 15+ Griffon. (Distinct from the Wastes table.)
+```text
+gather(rng) = { lodestone: 1d2, encounter_mod: 1d6 }
+mine(rng)   = { lodestone: 1d6, encounter_mod: 2d6 }   # requires tools
+refine_value(rng) = 1d10 * 10                          # per Raw Lodestone
+```
+
+## Pillar encounter table (p14) — ✅ implemented
+
+Read on **1d6 + mining/gathering modifier** (distinct from the Wastes table):
+
+```text
+encounter(1d6 + mod):
+  1-2 Nothing · 3 Lost Travelers · 4 Lodestone Miners(+mood) · 5 Merchants ·
+  6 Cyclops · 7 Bandits(+mood) · 8 Harpies · 9 Cutthroats(+mood) · 10 Medusa ·
+  11 Cyclops(2d6) · 12 Ogre · 13 Harpies(2d6) · 14 Shade · 15+ Griffon
+```
+
+> Lodestone Miners' mood as printed reads "1-2 / 2-4 / 5-6" (overlaps at 2);
+> implemented as a clean even split **1-2 Territorial, 3-4 Curious, 5-6
+> Friendly**. Bandit/Cutthroat moods match the Wastes table.
